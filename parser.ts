@@ -12,33 +12,34 @@ var _opcodes = {
   "lda.wy": true, "sta.wy": true, "cmp.wy": true, // WTF?
 };
 
+interface Param {
+  str: string;
+  addr?: Inst;    // possibly filled in on second pass
+  imm?: number;   // ...
+}
+
 interface Inst {
-  label: string;
-  addr: number;    // may be -1
-  bytes: number;
+  label?: string;
   opcode: string;
-  params: {
-    str: string;
-    addr?: number;  // possibly filled in on second pass
-    imm?: number;   // ...
-  }[];
-  comment: string;
+  params: Param[];
+  comment?: string;
+  elem?: SVGElement;
 }
 
 var lastLabel: string;
 
-function parseLine(line: string, lineNo: number, addr: number, labels: {[label: string]: number}) {
+function parseLine(line: string, lineNo: number, labels: {[label: string]: Inst}, constants: {[name: string]: number}) {
   line = line.trim();
 
   var inst: Inst = {
-    label: lastLabel,
-    addr: -1,
-    bytes: 0,
     opcode: null,
     params: [],
-    comment: null
   };
-  lastLabel = null;
+  if (lastLabel) {
+    inst.label = lastLabel;
+    labels[lastLabel] = inst;
+    lastLabel = null;
+  }
 
   // Find comment, if any.
   var semiIdx = line.indexOf(';');
@@ -87,7 +88,6 @@ function parseLine(line: string, lineNo: number, addr: number, labels: {[label: 
   // Label.
   if (tokens[0].indexOf(':') == tokens[0].length - 1) {
     var label = tokens[0].substr(0, tokens[0].length - 1).trim();
-    labels[label] = addr;
     tokens = tokens.slice(1);
   }
 
@@ -96,8 +96,8 @@ function parseLine(line: string, lineNo: number, addr: number, labels: {[label: 
     return null;
   }
 
-  inst.bytes = 1; // fake, but good enough for us
-  inst.addr = addr;
+  labels[label] = inst;
+
   if (tokens[0] == ".byte" || tokens[0] == ".db" || tokens[0] == ".dw") {
     // Data.
     // TODO: .db, etc for NES.
@@ -114,7 +114,7 @@ function parseLine(line: string, lineNo: number, addr: number, labels: {[label: 
     }
   } else if (tokens.length == 3 && tokens[1] == "=") {
     // Macro (e.g., `FOO = 42`).
-    labels[tokens[0]] = parseValue(tokens[2]);
+    constants[tokens[0]] = parseValue(tokens[2]);
     return null;
   } else {
     // Nope.
@@ -169,7 +169,7 @@ function parseBinary(str: string): number {
   return v;
 }
 
-function resolveNode(inst: Inst, labels: {[label: string]: number}): void {
+function resolveNode(inst: Inst, labels: {[label: string]: Inst}, constants: {[name: string]: number}): void {
   if (!inst.params) {
     return;
   }
@@ -189,29 +189,29 @@ function resolveNode(inst: Inst, labels: {[label: string]: number}): void {
     switch (str[0]) {
       case '$':
         // Address.
-        param.addr = parseValue(str);
+        param.imm = parseValue(str);
         break;
       case '#':
         // Immediate. Ignore.
         break;
       default:
-        param.addr = parseLabelRef(str, labels);
+        resolveRef(param, str, labels, constants);
         break;
     }
   }
 }
 
-function parseLabelRef(ref: string, labels: {[label: string]: number}): number {
+function resolveRef(param: Param, ref: string, labels: {[label: string]: Inst}, constants: {[name: string]: number}) {
   // Strip off low/hi byte crap. Not needed for our purposes.
   if (ref[0] == '<' || ref[0] == '>') {
     ref = ref.slice(1);
   }
 
   if (ref in labels) {
-    return labels[ref];
+    param.addr = labels[ref];
+  } else if (ref in constants) {
+    param.imm = constants[ref];
   }
-
-  return NaN;
 }
 
 function hexStr(n: number): string {
@@ -230,19 +230,18 @@ function hexStr(n: number): string {
 
 function parseAsm(asm: string): Inst[] {
   var insts: Inst[] = [];
-  var labels: {[label: string]: number} = {};
+  var labels: {[label: string]: Inst} = {};
+  var constants: {[name: string]: number} = {};
 
-  var addr = 0;
   var lines = asm.split("\n");
   for (var i = 0; i < lines.length; i++) {
-    var node = parseLine(lines[i], i, addr, labels);
+    var node = parseLine(lines[i], i, labels, constants);
     if (node) {
       insts.push(node);
-      addr += node.bytes;
     }
   }
   for (var i = 0; i < insts.length; i++) {
-    resolveNode(insts[i], labels);
+    resolveNode(insts[i], labels, constants);
   }
 
   return insts;

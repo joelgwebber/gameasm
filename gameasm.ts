@@ -59,10 +59,11 @@ function renderCode(grp: Group, params: string[], svg: SVGElement): void {
 
   var y = 1;
   for (var i = 0; i < grp.insts.length; i++) {
-    var node = grp.insts[i];
+    var inst = grp.insts[i];
     var text = createSVG("text", grp.elem);
     posSVG(text, 0, 12 * y++);
-    text.textContent = printInst(node, false);
+    text.textContent = printInst(inst, false);
+    inst.elem = text;
   }
 }
 
@@ -92,7 +93,7 @@ function gatherBytes(grp: Group): number[] {
     if (isData(node)) {
       for (var j = 0; j < node.params.length; j++) {
         var param = node.params[j];
-        bytes.push(parseValue(param.str));
+        bytes.push(param.imm);
       }
     }
   }
