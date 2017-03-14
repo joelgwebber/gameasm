@@ -1,6 +1,6 @@
 var SVGNS = "http://www.w3.org/2000/svg";
-var WIDTH = 2048;
-var HEIGHT = 3072;
+var WIDTH = 4096;
+var HEIGHT = 8192;
 
 function printNode(node, includeComment) {
   var str = "";
@@ -156,10 +156,11 @@ function renderGroup(grp, svg) {
 }
 
 var codeElem = document.getElementById("code");
-var renderElem = document.getElementById("render");
-var nodes = parseAsm(codeElem.textContent);
+var code = codeElem.firstChild.textContent;
+var nodes = parseAsm(code);
 var groups = groupNodes(nodes);
 
+var renderElem = document.getElementById("render");
 renderElem.setAttribute("viewBox", "0 0 " + WIDTH + " " + HEIGHT);
 
 var x = 0, y = 0;
@@ -177,4 +178,3 @@ for (var i = 0; i < groups.length; i++) {
 
   y += grp.h;
 }
-

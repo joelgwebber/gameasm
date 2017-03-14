@@ -103,6 +103,16 @@ function isData(node) {
 
 function isReturn(node) {
   switch (node.opcode) {
+    case "bcc":
+    case "bcs":
+    case "beq":
+    case "bmi":
+    case "bne":
+    case "bpl":
+    case "bvc":
+    case "bvs":
+    case "jmp":
+    case "jsr":
     case "rts":
     case "rti":
       return true;

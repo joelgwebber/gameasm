@@ -60,9 +60,21 @@ function parseLine(line, lineNo, addr, labels) {
     return null;
   }
 
-  // Ignore processor and org directives.
-  if (tokens[0] == "processor" || tokens[0] == "org") {
-    return null;
+  // Ignore various directives.
+  switch (tokens[0]) {
+    case "processor":
+    case "org":
+    case ".org":
+    case "include":
+    case "seg":
+    case "seg.u":
+    case "if":
+    case "else":
+    case "endif":
+    case "mac":
+    case "repeat":
+    case "repend":
+      return null;
   }
 
   // Label.
@@ -78,7 +90,7 @@ function parseLine(line, lineNo, addr, labels) {
 
   node.bytes = 1; // fake, but good enough for us
   node.addr = addr;
-  if (tokens[0] == ".byte") {
+  if (tokens[0] == ".byte" || tokens[0] == ".db" || tokens[0] == ".dw") {
     // Data.
     // TODO: .db, etc for NES.
     node.opcode = tokens[0];
@@ -114,8 +126,7 @@ function parseValue(str) {
     case '%': return parseBinary(str.slice(1));
   }
 
-  console.log("failed to parse immediate: '" + str + "'");
-  return NaN;
+  return parseInt(str);
 }
 
 function parseHex(str) {
