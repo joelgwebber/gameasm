@@ -12,31 +12,33 @@ var _opcodes = {
   "lda.wy": true, "sta.wy": true, "cmp.wy": true, // WTF?
 };
 
-// nodes: Node {
-//   addr: number;    // may be -1
-//   bytes: number;
-//   opcode: string;
-//   params: {
-//     str: string;
-//     addr: number;  // possibly filled in on second pass
-//     imm: number;   // ...
-//   }[];
-//   comment: string;
-// }[]
-//
-// labels: string => address/value
-function parseLine(line, lineNo, addr, labels) {
+interface Inst {
+  addr: number;    // may be -1
+  bytes: number;
+  opcode: string;
+  params: {
+    str: string;
+    addr?: number;  // possibly filled in on second pass
+    imm?: number;   // ...
+  }[];
+  comment: string;
+}
+
+function parseLine(line: string, lineNo: number, addr: number, labels: {[label: string]: number}) {
   line = line.trim();
 
-  var node = {
+  var inst: Inst = {
     addr: -1,
-    bytes: 0
+    bytes: 0,
+    opcode: null,
+    params: [],
+    comment: null
   };
 
   // Find comment, if any.
   var semiIdx = line.indexOf(';');
   if (semiIdx >= 0) {
-    node.comment = line.slice(semiIdx + 1).trim();
+    inst.comment = line.slice(semiIdx + 1).trim();
     line = line.slice(0, semiIdx);
   }
 
@@ -52,9 +54,9 @@ function parseLine(line, lineNo, addr, labels) {
   }
 
   if (tokens.length == 0) {
-    if (node.comment && node.comment.length > 0) {
+    if (inst.comment && inst.comment.length > 0) {
       // Comment-only line.
-      return node;
+      return inst;
     }
     // Blank line.
     return null;
@@ -78,7 +80,7 @@ function parseLine(line, lineNo, addr, labels) {
   }
 
   // Label.
-  if (tokens[0].endsWith(':')) {
+  if (tokens[0].indexOf(':') == tokens[0].length - 1) {
     var label = tokens[0].substr(0, tokens[0].length - 1).trim();
     labels[label] = addr;
     tokens = tokens.slice(1);
@@ -88,24 +90,21 @@ function parseLine(line, lineNo, addr, labels) {
     return null;
   }
 
-  node.bytes = 1; // fake, but good enough for us
-  node.addr = addr;
+  inst.bytes = 1; // fake, but good enough for us
+  inst.addr = addr;
   if (tokens[0] == ".byte" || tokens[0] == ".db" || tokens[0] == ".dw") {
     // Data.
     // TODO: .db, etc for NES.
-    node.opcode = tokens[0];
-    node.params = [];
+    inst.opcode = tokens[0];
+    inst.params = [];
     for (i = 1; i < tokens.length; i++) {
-      node.params.push({ str: tokens[i] });
+      inst.params.push({str: tokens[i]});
     }
   } else if (tokens[0] in _opcodes) {
     // Instruction.
-    var node = {
-      opcode: tokens[0],
-      params: []
-    };
+    inst.opcode = tokens[0];
     for (i = 1; i < tokens.length; i++) {
-      node.params.push({ str: tokens[i] });
+      inst.params.push({str: tokens[i]});
     }
   } else if (tokens.length == 3 && tokens[1] == "=") {
     // Macro (e.g., `FOO = 42`).
@@ -117,66 +116,68 @@ function parseLine(line, lineNo, addr, labels) {
     return null;
   }
 
-  return node;
+  return inst;
 }
 
-function parseValue(str) {
+function parseValue(str: string): number {
   switch (str[0]) {
-    case '$': return parseHex(str.slice(1));
-    case '%': return parseBinary(str.slice(1));
+    case '$':
+      return parseHex(str.slice(1));
+    case '%':
+      return parseBinary(str.slice(1));
   }
 
   return parseInt(str);
 }
 
-function parseHex(str) {
-  val = 0;
+function parseHex(str: string): number {
+  var v = 0;
   for (var i = 0; i < str.length; i++) {
-    val <<= 4;
+    v <<= 4;
     var ch = str.charCodeAt(i);
     if (ch >= 48 && ch <= 57) {
-      val += ch - 48;
+      v += ch - 48;
     } else if (ch >= 97 && ch <= 102) {
-      val += ch - 97 + 10;
+      v += ch - 97 + 10;
     } else {
       console.log("failed to parse hex: '" + str + "'");
       return NaN;
     }
   }
-  return val;
+  return v;
 }
 
-function parseBinary(str) {
-  val = 0;
+function parseBinary(str: string): number {
+  var v = 0;
   for (var i = 0; i < str.length; i++) {
-    val <<= 1;
+    v <<= 1;
     var ch = str.charCodeAt(i) - 48;
-    if (ch == '0') {
-    } else if (ch == '1') {
-      val += 1;
+    if (ch == 0) {
+    } else if (ch == 1) {
+      v += 1;
     } else {
       console.log("failed to parse binary: '" + str + "'");
       return NaN;
     }
   }
-  return val;
+  return v;
 }
 
-function resolveNode(node, labels) {
-  if (!node.params) {
+function resolveNode(inst: Inst, labels: {[label: string]: number}): void {
+  if (!inst.params) {
     return;
   }
 
-  for (var i = 0; i < node.params.length; i++) {
-    var param = node.params[i];
+  for (var i = 0; i < inst.params.length; i++) {
+    var param = inst.params[i];
     var str = param.str;
 
     // Drop indirect addressing parens. Doesn't matter to us.
     if (str[0] == '(') {
       str = str.slice(0);
     }
-    if (str[str.length-1] == ')') {
-      str = str.slice(0, str.length-1);
+    if (str[str.length - 1] == ')') {
+      str = str.slice(0, str.length - 1);
     }
 
     switch (str[0]) {
@@ -194,7 +195,7 @@ function resolveNode(node, labels) {
   }
 }
 
-function parseLabelRef(ref, labels) {
+function parseLabelRef(ref: string, labels: {[label: string]: number}): number {
   // Strip off low/hi byte crap. Not needed for our purposes.
   if (ref[0] == '<' || ref[0] == '>') {
     ref = ref.slice(1);
@@ -207,7 +208,7 @@ function parseLabelRef(ref, labels) {
   return NaN;
 }
 
-function hexStr(n) {
+function hexStr(n: number): string {
   var str = [];
   while (n) {
     var nybble = n & 0xf;
@@ -221,23 +222,22 @@ function hexStr(n) {
   return '$' + str.join('');
 }
 
-function parseAsm(asm) {
-  var nodes = [];
-  var labels = {};
+function parseAsm(asm: string): Inst[] {
+  var insts: Inst[] = [];
+  var labels: {[label: string]: number} = {};
 
   var addr = 0;
   var lines = asm.split("\n");
   for (var i = 0; i < lines.length; i++) {
     var node = parseLine(lines[i], i, addr, labels);
     if (node) {
-      nodes.push(node);
+      insts.push(node);
       addr += node.bytes;
     }
   }
-  for (var i = 0; i < nodes.length; i++) {
-    resolveNode(nodes[i], labels);
+  for (var i = 0; i < insts.length; i++) {
+    resolveNode(insts[i], labels);
   }
 
-  return nodes;
+  return insts;
 }
-
