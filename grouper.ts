@@ -74,10 +74,10 @@ function shouldSplitGroup(grp: Group, inst: Inst, nextInst: Inst): boolean {
 
   switch (grp.kind) {
     case "code":
-      return isReturn(inst) || isData(nextInst);
+      return hasLabel(nextInst) || canBranch(inst) || isData(nextInst);
     case "image":
     case "bytes":
-      return isCode(nextInst);
+      return hasLabel(nextInst) || isCode(nextInst);
   }
   return false;
 }
@@ -101,7 +101,7 @@ function isData(inst: Inst): boolean {
   }
 }
 
-function isReturn(inst: Inst): boolean {
+function canBranch(inst: Inst): boolean {
   switch (inst.opcode) {
     case "bcc":
     case "bcs":
@@ -121,3 +121,6 @@ function isReturn(inst: Inst): boolean {
   }
 }
 
+function hasLabel(inst: Inst): boolean {
+  return !!inst.label;
+}

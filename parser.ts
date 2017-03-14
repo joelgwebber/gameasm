@@ -13,6 +13,7 @@ var _opcodes = {
 };
 
 interface Inst {
+  label: string;
   addr: number;    // may be -1
   bytes: number;
   opcode: string;
@@ -24,16 +25,20 @@ interface Inst {
   comment: string;
 }
 
+var lastLabel: string;
+
 function parseLine(line: string, lineNo: number, addr: number, labels: {[label: string]: number}) {
   line = line.trim();
 
   var inst: Inst = {
+    label: lastLabel,
     addr: -1,
     bytes: 0,
     opcode: null,
     params: [],
     comment: null
   };
+  lastLabel = null;
 
   // Find comment, if any.
   var semiIdx = line.indexOf(';');
@@ -87,6 +92,7 @@ function parseLine(line: string, lineNo: number, addr: number, labels: {[label: 
   }
 
   if (tokens.length == 0) {
+    lastLabel = label;
     return null;
   }
 

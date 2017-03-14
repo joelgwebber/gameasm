@@ -7,6 +7,10 @@ var HEIGHT = 4096;
 function printInst(inst: Inst, includeComment: boolean): string {
   var str = "";
 
+  if (inst.label) {
+    str += inst.label + ": ";
+  }
+
   if (inst.opcode) {
     str += inst.opcode;
   }
