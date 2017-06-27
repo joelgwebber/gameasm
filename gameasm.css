@@ -3,3 +3,7 @@ text {
   font-size: 8px;
 }
 
+g.Group {
+  cursor: pointer;
+  background-color: lightgreen;
+}

@@ -3,3 +3,4 @@
 *.iml
 gameasm.js
 gameasm.js.map
+node_modules

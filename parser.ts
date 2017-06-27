@@ -12,18 +12,28 @@ var _opcodes = {
   "lda.wy": true, "sta.wy": true, "cmp.wy": true, // WTF?
 };
 
-interface Param {
+export interface Param {
   str: string;
   addr?: Inst;    // possibly filled in on second pass
   imm?: number;   // ...
 }
 
-interface Inst {
+export interface Edge {
+  from: Inst;
+  to:   Inst;
+  elem: SVGPathElement;
+}
+
+export interface Inst {
   label?: string;
   opcode: string;
   params: Param[];
   comment?: string;
-  elem?: SVGElement;
+
+  outEdge?: Edge;
+  inEdges?: Edge[];
+
+  elem?:   SVGElement;
 }
 
 var lastLabel: string;
@@ -228,7 +238,7 @@ function hexStr(n: number): string {
   return '$' + str.join('');
 }
 
-function parseAsm(asm: string): Inst[] {
+export function parseAsm(asm: string): Inst[] {
   var insts: Inst[] = [];
   var labels: {[label: string]: Inst} = {};
   var constants: {[name: string]: number} = {};

@@ -1,5 +1,5 @@
-///<reference path="parser.ts" />
-///<reference path="grouper.ts" />
+import {Group, groupInsts, isData} from "./grouper";
+import {Edge, Inst, parseAsm} from "./parser";
 
 var SVGNS = "http://www.w3.org/2000/svg";
 var HEIGHT = 4096;
@@ -38,10 +38,10 @@ function printInst(inst: Inst, includeComment: boolean): string {
   return str;
 }
 
-function createSVG(tag: string, parent: SVGElement): SVGSVGElement {
+function createSVG(tag: string, parent: SVGElement): SVGElement {
   var e = document.createElementNS(SVGNS, tag);
   parent.appendChild(e);
-  return <SVGSVGElement>e;
+  return <SVGElement>e;
 }
 
 function posSVG(elem: SVGElement, x: number, y: number): void {
@@ -50,8 +50,6 @@ function posSVG(elem: SVGElement, x: number, y: number): void {
 }
 
 function renderCode(grp: Group, params: string[], svg: SVGElement): void {
-  grp.elem = createSVG("g", svg);
-
   var h = grp.insts.length + 1;
 
   grp.w = 12 * 10;
@@ -64,19 +62,30 @@ function renderCode(grp: Group, params: string[], svg: SVGElement): void {
     posSVG(text, 0, 12 * y++);
     text.textContent = printInst(inst, false);
     inst.elem = text;
+
+    for (var j = 0; j < inst.params.length; j++) {
+      var p = inst.params[j];
+      if (p.addr) {
+        inst.outEdge = { from: inst, to: p.addr, elem: <SVGPathElement>createSVG("path", svg) };
+        inst.outEdge.elem.setAttribute("stroke", "lightblue");
+        if (!p.addr.inEdges) {
+          p.addr.inEdges = [];
+        }
+        p.addr.inEdges.push(inst.outEdge);
+      }
+    }
   }
 }
 
 function renderBytes(grp: Group, params: string[], svg: SVGElement): void {
-  grp.elem = createSVG("g", svg);
-
   var maxWidth = 0;
   var y = 1;
   for (var i = 0; i < grp.insts.length; i++) {
-    var node = grp.insts[i];
+    var inst = grp.insts[i];
     var text = createSVG("text", grp.elem);
     posSVG(text, 0, 12 * y++);
-    text.textContent = printInst(node, false);
+    text.textContent = printInst(inst, false);
+    inst.elem = text;
     if (text.textContent.length > maxWidth) {
       maxWidth = text.textContent.length;
     }
@@ -109,8 +118,6 @@ function createPixel(color: string, x: number, y: number, w: number, h: number, 
 }
 
 function renderImage(grp: Group, params: string[], svg: SVGElement): void {
-  grp.elem = createSVG("g", svg);
-
   var bpp = parseInt(params[0]);
   if (bpp != 1) {
     // That's all we support for now.
@@ -149,6 +156,11 @@ function positionGroup(grp: Group): void {
 function renderGroup(grp: Group, svg: SVGElement): void {
   var kind = grp.kind.split("-");
   var params = kind.slice(1);
+
+  grp.elem = createSVG("g", svg);
+  grp.elem.setAttribute("class", "Group");
+  grp.elem.addEventListener("mousedown", (e) => groupMouseDown(e, grp) );
+
   switch (kind[0]) {
     case "code":
       renderCode(grp, params, svg);
@@ -161,6 +173,74 @@ function renderGroup(grp: Group, svg: SVGElement): void {
       break;
   }
 }
+
+function updateEdge(edge: Edge) {
+  var r0 = edge.from.elem.getBoundingClientRect();
+  var r1 = edge.to.elem.getBoundingClientRect();
+  var x0 = r0.left + r0.width / 2;
+  var y0 = r0.top;// + r0.height / 2;
+  var x1 = r1.left + r1.width / 2;
+  var y1 = r1.top;// + r1.height / 2;
+  edge.elem.setAttribute("d", "M" + x0 + "," + y0 + " L" + x1 + "," + y1);
+}
+
+function updateAllEdges(groups: Group[]) {
+  for (var i = 0; i < groups.length; i++) {
+    var grp = groups[i];
+    for (var j = 0; j < grp.insts.length; j++) {
+      var inst = grp.insts[j];
+      if (inst.outEdge) {
+        updateEdge(inst.outEdge);
+      }
+    }
+  }
+}
+
+function updateGroup(grp: Group) {
+  positionGroup(grp);
+  for (var i = 0; i < grp.insts.length; i++) {
+    var inst = grp.insts[i];
+    if (inst.outEdge) {
+      updateEdge(inst.outEdge);
+    }
+    if (inst.inEdges) {
+      for (var j = 0; j < inst.inEdges.length; j++) {
+        updateEdge(inst.inEdges[j]);
+      }
+    }
+  }
+}
+
+var dragGroup: Group;
+var dragOffX: number;
+var dragOffY: number;
+
+function groupMouseDown(e: MouseEvent, grp: Group) {
+  if (grp) {
+    dragGroup = grp;
+    var r = grp.elem.getBoundingClientRect();
+    dragOffX = e.clientX - r.left;
+    dragOffY = e.clientY - r.top;
+  }
+  e.preventDefault();
+}
+
+function mouseUp(e: MouseEvent) {
+  dragGroup = null;
+  e.preventDefault();
+}
+
+function mouseMove(e: MouseEvent) {
+  if (dragGroup) {
+    dragGroup.x = e.clientX - dragOffX;
+    dragGroup.y = e.clientY - dragOffY;
+    updateGroup(dragGroup);
+    e.preventDefault();
+  }
+}
+
+window.addEventListener("mouseup", mouseUp, true);
+window.addEventListener("mousemove", mouseMove, true);
 
 function fetchAsm(name, done: (asm: string) => void) {
   var xhr = new XMLHttpRequest();
@@ -199,9 +279,10 @@ fetchAsm("adventure.asm", (code) => {
     y += grp.h;
   }
 
+  updateAllEdges(groups);
+
   var width = (x + (12 * 15));
   renderElem.setAttribute("viewBox", "0 0 " + width + " " + HEIGHT);
   renderElem.setAttribute("width", "" + width);
   renderElem.setAttribute("height", "" + HEIGHT);
 });
-

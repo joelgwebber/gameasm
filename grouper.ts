@@ -1,13 +1,16 @@
-interface Group {
+import {Inst} from "./parser";
+
+export interface Group {
   kind:  string; // code, image, bytes
   insts: Inst[];
 
   x, y:  number;
   w, h:  number;
-  elem:  SVGElement;
+
+  elem:     SVGElement;
 }
 
-function groupInsts(insts: Inst[]): Group[] {
+export function groupInsts(insts: Inst[]): Group[] {
   var groups = [];
   var grp = null;
 
@@ -90,7 +93,7 @@ function isCode(inst: Inst): boolean {
   return !isData(inst) && !isComment(inst);
 }
 
-function isData(inst: Inst): boolean {
+export function isData(inst: Inst): boolean {
   switch (inst.opcode) {
     case ".byte":
     case ".db":
