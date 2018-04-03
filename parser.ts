@@ -1,15 +1,19 @@
+import {createSVG, svgElem} from "./svg";
+
 var _opcodes = {
-  "adc": true, "and": true, "asl": true, "bit": true, "bpl": true, "bmi": true,
-  "bvc": true, "bvs": true, "bcc": true, "bcs": true, "bne": true, "beq": true,
-  "brk": true, "cmp": true, "cpx": true, "cpy": true, "dec": true, "eor": true,
-  "clc": true, "sec": true, "cli": true, "sei": true, "clv": true, "cld": true,
-  "sed": true, "inc": true, "jmp": true, "jsr": true, "lda": true, "ldx": true,
-  "ldy": true, "lsr": true, "nop": true, "ora": true, "tax": true, "txa": true,
-  "dex": true, "inx": true, "tay": true, "tya": true, "dey": true, "iny": true,
-  "ror": true, "rol": true, "rti": true, "rts": true, "sbc": true, "sta": true,
-  "txs": true, "tsx": true, "pha": true, "pla": true, "php": true, "plp": true,
-  "stx": true, "sty": true,
-  "lda.wy": true, "sta.wy": true, "cmp.wy": true, // WTF?
+  "adc": true, "and": true, "asl": true, "bit": true, "bpl": true, "bmi": true, "bvc": true, "bvs": true,
+  "bcc": true, "bcs": true, "bne": true, "beq": true, "brk": true, "cmp": true, "cpx": true, "cpy": true,
+  "dec": true, "eor": true, "clc": true, "sec": true, "cli": true, "sei": true, "clv": true, "cld": true,
+  "sed": true, "inc": true, "jmp": true, "jsr": true, "lda": true, "ldx": true, "ldy": true, "lsr": true,
+  "nop": true, "ora": true, "tax": true, "txa": true, "dex": true, "inx": true, "tay": true, "tya": true,
+  "dey": true, "iny": true, "ror": true, "rol": true, "rti": true, "rts": true, "sbc": true, "sta": true,
+  "txs": true, "tsx": true, "pha": true, "pla": true, "php": true, "plp": true, "stx": true, "sty": true,
+  "lda.wy": true, "sta.wy": true, "cmp.wy": true,
+};
+
+var _directives = {
+  "processor": true, "org": true, ".org": true, "include": true, "seg": true, "seg.u": true, "if": true,
+  "else": true, "endif": true, "mac": true, "repeat": true, "repend": true,
 };
 
 export interface Param {
@@ -30,13 +34,28 @@ export interface Inst {
   params: Param[];
   comment?: string;
 
-  outEdge?: Edge;
+  outEdges?: Edge[];
   inEdges?: Edge[];
 
   elem?:   SVGElement;
 }
 
 var lastLabel: string;
+
+export function addEdge(inst: Inst, target: Inst) {
+  var edge = { from: inst, to: target, elem: <SVGPathElement>createSVG("path", svgElem) };
+  edge.elem.setAttribute("stroke", "lightblue");
+
+  if (!inst.outEdges) {
+    inst.outEdges = [];
+  }
+  inst.outEdges.push(edge);
+
+  if (!target.inEdges) {
+    target.inEdges = [];
+  }
+  target.inEdges.push(edge);
+}
 
 function parseLine(line: string, lineNo: number, labels: {[label: string]: Inst}, constants: {[name: string]: number}) {
   line = line.trim();
@@ -79,20 +98,8 @@ function parseLine(line: string, lineNo: number, labels: {[label: string]: Inst}
   }
 
   // Ignore various directives.
-  switch (tokens[0]) {
-    case "processor":
-    case "org":
-    case ".org":
-    case "include":
-    case "seg":
-    case "seg.u":
-    case "if":
-    case "else":
-    case "endif":
-    case "mac":
-    case "repeat":
-    case "repend":
-      return null;
+  if (tokens[0] in _directives) {
+    return null;
   }
 
   // Label.

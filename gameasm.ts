@@ -1,7 +1,7 @@
 import {Group, groupInsts, isData} from "./grouper";
 import {Edge, Inst, parseAsm} from "./parser";
+import {createSVG, posSVG, sizeSVG, svgBBox, svgElem} from "./svg";
 
-var SVGNS = "http://www.w3.org/2000/svg";
 var HEIGHT = 4096;
 
 function printInst(inst: Inst, includeComment: boolean): string {
@@ -38,18 +38,7 @@ function printInst(inst: Inst, includeComment: boolean): string {
   return str;
 }
 
-function createSVG(tag: string, parent: SVGElement): SVGElement {
-  var e = document.createElementNS(SVGNS, tag);
-  parent.appendChild(e);
-  return <SVGElement>e;
-}
-
-function posSVG(elem: SVGElement, x: number, y: number): void {
-  elem.setAttribute("x", "" + x);
-  elem.setAttribute("y", "" + y);
-}
-
-function renderCode(grp: Group, params: string[], svg: SVGElement): void {
+function renderCode(grp: Group, params: string[]): void {
   var h = grp.insts.length + 1;
 
   grp.w = 12 * 10;
@@ -62,22 +51,10 @@ function renderCode(grp: Group, params: string[], svg: SVGElement): void {
     posSVG(text, 0, 12 * y++);
     text.textContent = printInst(inst, false);
     inst.elem = text;
-
-    for (var j = 0; j < inst.params.length; j++) {
-      var p = inst.params[j];
-      if (p.addr) {
-        inst.outEdge = { from: inst, to: p.addr, elem: <SVGPathElement>createSVG("path", svg) };
-        inst.outEdge.elem.setAttribute("stroke", "lightblue");
-        if (!p.addr.inEdges) {
-          p.addr.inEdges = [];
-        }
-        p.addr.inEdges.push(inst.outEdge);
-      }
-    }
   }
 }
 
-function renderBytes(grp: Group, params: string[], svg: SVGElement): void {
+function renderBytes(grp: Group, params: string[]): void {
   var maxWidth = 0;
   var y = 1;
   for (var i = 0; i < grp.insts.length; i++) {
@@ -117,15 +94,20 @@ function createPixel(color: string, x: number, y: number, w: number, h: number, 
   posSVG(box, x, y);
 }
 
-function renderImage(grp: Group, params: string[], svg: SVGElement): void {
+function renderImage(grp: Group, params: string[]): void {
   var bpp = parseInt(params[0]);
   if (bpp != 1) {
     // That's all we support for now.
-    return;
+    throw "nyi";
   }
 
   var byteWidth = parseInt(params[1]);
   var bytes = gatherBytes(grp);
+
+  // Image instructions all just share the group elem.
+  for (var i = 0; i < grp.insts.length; i++) {
+    grp.insts[i].elem = grp.elem;
+  }
 
   var y = 0, pos = 0;
   while (pos < bytes.length) {
@@ -153,33 +135,33 @@ function positionGroup(grp: Group): void {
   grp.elem.setAttribute("transform", "translate(" + grp.x + ", " + grp.y + ")");
 }
 
-function renderGroup(grp: Group, svg: SVGElement): void {
+function renderGroup(grp: Group): void {
   var kind = grp.kind.split("-");
   var params = kind.slice(1);
 
-  grp.elem = createSVG("g", svg);
+  grp.elem = createSVG("g", svgElem);
   grp.elem.setAttribute("class", "Group");
   grp.elem.addEventListener("mousedown", (e) => groupMouseDown(e, grp) );
 
   switch (kind[0]) {
     case "code":
-      renderCode(grp, params, svg);
+      renderCode(grp, params);
       break;
     case "bytes":
-      renderBytes(grp, params, svg);
+      renderBytes(grp, params);
       break;
     case "image":
-      renderImage(grp, params, svg);
+      renderImage(grp, params);
       break;
   }
 }
 
 function updateEdge(edge: Edge) {
-  var r0 = edge.from.elem.getBoundingClientRect();
-  var r1 = edge.to.elem.getBoundingClientRect();
-  var x0 = r0.left + r0.width / 2;
+  var r0 = edge.from.elem.getBoundingClientRect();// svgBBox(edge.from.elem);
+  var r1 = edge.to.elem.getBoundingClientRect();// svgBBox(edge.to.elem);
+  var x0 = r0.left;// + r0.width / 2;
   var y0 = r0.top;// + r0.height / 2;
-  var x1 = r1.left + r1.width / 2;
+  var x1 = r1.left;// + r1.width / 2;
   var y1 = r1.top;// + r1.height / 2;
   edge.elem.setAttribute("d", "M" + x0 + "," + y0 + " L" + x1 + "," + y1);
 }
@@ -189,8 +171,10 @@ function updateAllEdges(groups: Group[]) {
     var grp = groups[i];
     for (var j = 0; j < grp.insts.length; j++) {
       var inst = grp.insts[j];
-      if (inst.outEdge) {
-        updateEdge(inst.outEdge);
+      if (inst.outEdges) {
+        for (var k = 0; k < inst.outEdges.length; k++) {
+          updateEdge(inst.outEdges[k]);
+        }
       }
     }
   }
@@ -200,8 +184,10 @@ function updateGroup(grp: Group) {
   positionGroup(grp);
   for (var i = 0; i < grp.insts.length; i++) {
     var inst = grp.insts[i];
-    if (inst.outEdge) {
-      updateEdge(inst.outEdge);
+    if (inst.outEdges) {
+      for (var j = 0; j < inst.outEdges.length; j++) {
+        updateEdge(inst.outEdges[j]);
+      }
     }
     if (inst.inEdges) {
       for (var j = 0; j < inst.inEdges.length; j++) {
@@ -232,8 +218,8 @@ function mouseUp(e: MouseEvent) {
 
 function mouseMove(e: MouseEvent) {
   if (dragGroup) {
-    dragGroup.x = e.clientX - dragOffX;
-    dragGroup.y = e.clientY - dragOffY;
+    dragGroup.x = e.clientX - dragOffX + window.scrollX;
+    dragGroup.y = e.clientY - dragOffY + window.scrollY;
     updateGroup(dragGroup);
     e.preventDefault();
   }
@@ -261,12 +247,10 @@ fetchAsm("adventure.asm", (code) => {
   var insts = parseAsm(code);
   var groups = groupInsts(insts);
 
-  var renderElem = <SVGSVGElement><Element>document.getElementById("render");
-
   var x = 0, y = 0;
   for (var i = 0; i < groups.length; i++) {
     var grp = groups[i];
-    renderGroup(grp, renderElem);
+    renderGroup(grp);
     if (y + grp.h > HEIGHT) {
       x += 12 * 15;
       y = 0;
@@ -280,9 +264,5 @@ fetchAsm("adventure.asm", (code) => {
   }
 
   updateAllEdges(groups);
-
-  var width = (x + (12 * 15));
-  renderElem.setAttribute("viewBox", "0 0 " + width + " " + HEIGHT);
-  renderElem.setAttribute("width", "" + width);
-  renderElem.setAttribute("height", "" + HEIGHT);
+  sizeSVG(x + (12 * 15), HEIGHT);
 });

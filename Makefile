@@ -1,11 +1,13 @@
+GULP := node ./node_modules/gulp/bin/gulp.js
+
 # Builds the js client.
 .PHONY: js
 js:
-	gulp
+	$(GULP)
 
 .PHONY: dev
 dev:
-	gulp webpack-dev &
+	$(GULP) webpack-dev &
 	python -m SimpleHTTPServer 2112
 
 .PHONY: run

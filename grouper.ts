@@ -1,4 +1,5 @@
-import {Inst} from "./parser";
+import {addEdge, Inst} from "./parser";
+import {svgElem} from "./svg";
 
 export interface Group {
   kind:  string; // code, image, bytes
@@ -37,13 +38,38 @@ export function groupInsts(insts: Inst[]): Group[] {
       grp.insts.push(inst);
     }
 
-    var nextNode = insts[i + 1];
-    if (shouldSplitGroup(grp, inst, nextNode)) {
+    // Find the next non-comment inst.
+    var n = nextOpOrData(insts, i);
+    // var n = i + 1;
+    // while (n < insts.length && isComment(insts[n]) && !isDirective(insts[n])) {
+    //   n++;
+    // }
+    var nextInst = insts[n];
+
+    if (shouldSplitGroup(grp, inst, nextInst)) {
+      if (nextInst && isCode(nextInst) && isCode(inst) && !isJumpish(inst)) {
+        addEdge(inst, nextInst);
+      }
       grp = null;
+    }
+
+    for (var j = 0; j < inst.params.length; j++) {
+      var p = inst.params[j];
+      if (p.addr) {
+        addEdge(inst, p.addr);
+      }
     }
   }
 
   return groups;
+}
+
+function nextOpOrData(insts: Inst[], i: number): number {
+  i++;
+  while (i < insts.length && (isComment(insts[i]) /*|| isLabel(insts[i])*/) && !isDirective(insts[i])) {
+    i++;
+  }
+  return i;
 }
 
 function groupKindForInst(inst: Inst): string {
@@ -116,6 +142,17 @@ function canBranch(inst: Inst): boolean {
     case "bvs":
     case "jmp":
     case "jsr":
+    case "rts":
+    case "rti":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isJumpish(inst: Inst): boolean {
+  switch (inst.opcode) {
+    case "jmp":
     case "rts":
     case "rti":
       return true;
